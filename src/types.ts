@@ -44,5 +44,29 @@ export interface ItemFormData {
   splitParticipants: string[]
 }
 
-export type Tab = 'home' | 'list' | 'stats' | 'settings'
+export interface RecurringExpense {
+  id: string
+  title: string
+  amount: number
+  paymentDay: number
+  paymentMethod: string
+  category: string
+  memo: string
+  repeatType: 'monthly'
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RecurringExpenseFormData {
+  title: string
+  amount: string
+  paymentDay: string
+  paymentMethod: string
+  category: string
+  memo: string
+  enabled: boolean
+}
+
+export type Tab = 'home' | 'list' | 'recurring' | 'stats' | 'settings'
 
