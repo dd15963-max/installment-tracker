@@ -30,35 +30,19 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'active' | 'completed' | 'split' | 'all'>('active')
   const fileRef = useRef<HTMLInputElement>(null)
-  const navigationRef = useRef<{ tab: Tab; modal: 'form' | 'detail' | 'split' | null; selected: InstallmentItem | null }>({ tab, modal, selected })
 
   useEffect(() => { localStorage.setItem(DATA_KEY, JSON.stringify(items)) }, [items])
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem(DARK_KEY, JSON.stringify({ dark, splitNames })) }, [dark, splitNames])
-  useEffect(() => { navigationRef.current = { tab, modal, selected } }, [tab, modal, selected])
   useEffect(() => {
-    const rootState = { installmentTrackerRoot: true }
-    const guardState = { installmentTrackerGuard: true }
-    const armBackGuard = () => {
-      if (!window.history.state?.installmentTrackerGuard) window.history.pushState(guardState, '', '#app')
+    window.history.replaceState({ installmentTracker: true, tab: 'home', modal: null }, '', '#home')
+    const handleBack = (event: PopStateEvent) => {
+      const state = event.state
+      if (!state?.installmentTracker) return
+      setTab(state.tab || 'home')
+      setModal(state.modal || null)
     }
-    window.history.replaceState(rootState, '', '#home')
-    armBackGuard()
-    const handleBack = () => {
-      const current = navigationRef.current
-      if (current.modal === 'form' && current.selected) setModal('detail')
-      else if (current.modal) setModal(null)
-      else if (current.tab !== 'home') setTab('home')
-      armBackGuard()
-    }
-    const handleResume = () => { if (document.visibilityState === 'visible') armBackGuard() }
     window.addEventListener('popstate', handleBack)
-    window.addEventListener('pageshow', armBackGuard)
-    document.addEventListener('visibilitychange', handleResume)
-    return () => {
-      window.removeEventListener('popstate', handleBack)
-      window.removeEventListener('pageshow', armBackGuard)
-      document.removeEventListener('visibilitychange', handleResume)
-    }
+    return () => window.removeEventListener('popstate', handleBack)
   }, [])
 
   const active = items.filter(i => i.status === 'active')
@@ -70,13 +54,17 @@ export default function App() {
   const splitMonthMine = splitMonthPayments.reduce((sum, x) => sum + myShare(x.item, x.payment.amount), 0)
   const visible = items.filter(i => (filter === 'all' || (filter === 'split' ? i.splitPayment : i.status === filter)) && [i.title, i.paymentMethod, i.merchant, i.memo, i.category].join(' ').toLowerCase().includes(search.toLowerCase()))
 
-  function openAdd() { const next = emptyForm(); next.splitParticipants = splitNames.slice(0, 2); setSelected(null); setForm(next); setModal('form') }
-  function openDetail(item: InstallmentItem) { setSelected(item); setModal('detail') }
-  function openEdit(item: InstallmentItem) { setSelected(item); setForm(formFromItem(item)); setModal('form') }
+  function pushView(nextTab: Tab, nextModal: 'form' | 'detail' | 'split' | null, hash: string) { window.history.pushState({ installmentTracker: true, tab: nextTab, modal: nextModal }, '', hash) }
+  function selectTab(nextTab: Tab) { if (nextTab === tab && !modal) return; pushView(nextTab, null, `#${nextTab}`); setModal(null); setTab(nextTab) }
+  function closeView() { if (window.history.state?.installmentTracker) window.history.back(); else setModal(null) }
+  function openAdd() { const next = emptyForm(); next.splitParticipants = splitNames.slice(0, 2); pushView(tab, 'form', '#add'); setSelected(null); setForm(next); setModal('form') }
+  function openDetail(item: InstallmentItem) { pushView(tab, 'detail', `#detail-${item.id}`); setSelected(item); setModal('detail') }
+  function openEdit(item: InstallmentItem) { pushView(tab, 'form', `#edit-${item.id}`); setSelected(item); setForm(formFromItem(item)); setModal('form') }
   function save(e: React.FormEvent) {
     e.preventDefault()
     const next = itemFromForm(form, selected || undefined)
     setItems(prev => selected ? prev.map(i => i.id === selected.id ? next : i) : [next, ...prev])
+    window.history.replaceState({ installmentTracker: true, tab, modal: 'detail' }, '', `#detail-${next.id}`)
     setSelected(next); setModal('detail')
   }
   function markNext(item: InstallmentItem, undo = false) {
@@ -91,22 +79,22 @@ export default function App() {
   function updateSplitName(index: number, value: string) {
     setSplitNames(prev => prev.map((current, i) => i === index ? value : current))
     setItems(prev => prev.map(item => item.splitPayment && item.splitParticipants.length > index ? { ...item, splitParticipants: item.splitParticipants.map((current, i) => i === index ? value : current), updatedAt: new Date().toISOString() } : item))
-  }  function deleteItem(item: InstallmentItem) { if (confirm('이 할부 내역을 삭제하시겠습니까?\n삭제한 데이터는 복구할 수 없습니다.')) { setItems(prev => prev.filter(i => i.id !== item.id)); setModal(null) } }
+  }  function deleteItem(item: InstallmentItem) { if (confirm('이 할부 내역을 삭제하시겠습니까?\n삭제한 데이터는 복구할 수 없습니다.')) { setItems(prev => prev.filter(i => i.id !== item.id)); window.history.back() } }
   function exportData() { const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), items, settings: { dark, splitNames } }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `installment-tracker-backup-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href) }
   function importData(e: React.ChangeEvent<HTMLInputElement>) { const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { const parsed = JSON.parse(String(reader.result)); const incoming = Array.isArray(parsed) ? parsed : parsed.items; if (!Array.isArray(incoming)) throw new Error(); if (confirm('현재 저장된 데이터가 불러온 데이터로 교체됩니다. 계속하시겠습니까?')) { setItems(incoming); if (Array.isArray(parsed.settings?.splitNames)) setSplitNames(defaultSplitNames.map((name, index) => parsed.settings.splitNames[index] || name)); if (typeof parsed.settings?.dark === 'boolean') setDark(parsed.settings.dark) } } catch { alert('올바른 할부 기록장 백업 파일이 아닙니다.') } }; reader.readAsText(file); e.target.value = '' }
 
   return <div className="mx-auto min-h-screen max-w-[480px] overflow-x-hidden bg-[#f8f7fb] shadow-2xl dark:bg-[#15141b] dark:text-white">
     <main className="safe-bottom min-h-screen">
-      {tab === 'home' && <HomeView active={active} scheduled={scheduled} paid={paidThisMonth} remaining={remaining} splitTotal={splitMonthTotal} splitMine={splitMonthMine} onOpen={openDetail} onAdd={openAdd} onOpenSplit={() => setModal('split')} />}
+      {tab === 'home' && <HomeView active={active} scheduled={scheduled} paid={paidThisMonth} remaining={remaining} splitTotal={splitMonthTotal} splitMine={splitMonthMine} onOpen={openDetail} onAdd={openAdd} onOpenSplit={() => { pushView(tab, 'split', '#split'); setModal('split') }} />}
       {tab === 'list' && <ListView items={visible} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} onOpen={openDetail} />}
       {tab === 'stats' && <StatsView items={items} remaining={remaining} />}
       {tab === 'settings' && <SettingsView dark={dark} setDark={setDark} splitNames={splitNames} updateSplitName={updateSplitName} exportData={exportData} importClick={() => fileRef.current?.click()} clear={() => { if(confirm('모든 데이터를 초기화하시겠습니까?')) setItems([]) }} />}
     </main>
     <input ref={fileRef} type="file" accept="application/json" className="hidden" onChange={importData} />
-    <Nav tab={tab} setTab={setTab} onAdd={openAdd} />
-    {modal === 'form' && <FormModal form={form} setForm={setForm} onClose={() => setModal(null)} onSave={save} editing={!!selected} participantDefaults={splitNames} />}
-    {modal === 'split' && <SplitMonthlyModal items={items} onClose={() => setModal(null)} />}
-    {modal === 'detail' && selected && <DetailModal item={selected} onClose={() => setModal(null)} onEdit={() => openEdit(selected)} onPay={() => markNext(selected)} onUndo={() => markNext(selected, true)} onDelete={() => deleteItem(selected)} />}
+    <Nav tab={tab} setTab={selectTab} onAdd={openAdd} />
+    {modal === 'form' && <FormModal form={form} setForm={setForm} onClose={closeView} onSave={save} editing={!!selected} participantDefaults={splitNames} />}
+    {modal === 'split' && <SplitMonthlyModal items={items} onClose={closeView} />}
+    {modal === 'detail' && selected && <DetailModal item={selected} onClose={closeView} onEdit={() => openEdit(selected)} onPay={() => markNext(selected)} onUndo={() => markNext(selected, true)} onDelete={() => deleteItem(selected)} />}
   </div>
 }
 
