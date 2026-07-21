@@ -1,0 +1,19 @@
+{
+  "name": "할부 기록장",
+  "short_name": "할부 기록장",
+  "description": "내 할부 내역을 한눈에 관리하는 모바일 할부 기록장",
+  "start_url": "/installment-tracker/",
+  "scope": "/installment-tracker/",
+  "display": "standalone",
+  "background_color": "#15141b",
+  "theme_color": "#7057e8",
+  "icons": [
+    {
+      "src": "/installment-tracker/app-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
