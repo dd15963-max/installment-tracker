@@ -54,6 +54,8 @@ export interface RecurringExpense {
   memo: string
   repeatType: 'monthly'
   enabled: boolean
+  splitPayment: boolean
+  splitParticipants: string[]
   createdAt: string
   updatedAt: string
 }
@@ -66,6 +68,8 @@ export interface RecurringExpenseFormData {
   category: string
   memo: string
   enabled: boolean
+  splitPayment: boolean
+  splitParticipants: string[]
 }
 
 export type Tab = 'home' | 'list' | 'recurring' | 'stats' | 'settings'
