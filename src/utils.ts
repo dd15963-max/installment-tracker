@@ -36,6 +36,7 @@ export function itemFromForm(form: ItemFormData, existing?: InstallmentItem): In
     title: form.title.trim(), totalAmount: total, installmentMonths: months,
     firstPaymentDate: form.firstPaymentDate, paymentMethod: form.paymentMethod.trim(),
     merchant: form.merchant.trim(), category: form.category, memo: form.memo.trim(),
+    splitPayment: form.splitPayment, splitParticipants: form.splitPayment ? form.splitParticipants.map((name, index) => name.trim() || String.fromCharCode(65 + index)) : [],
     paidCount, status: paidCount === months ? 'completed' : 'active',
     createdAt: existing?.createdAt ?? now, updatedAt: now,
     ...(paidCount === months ? { completedAt: now } : {}), payments,
@@ -46,6 +47,13 @@ export const paidAmount = (item: InstallmentItem) => item.payments.filter(p => p
 export const remainingAmount = (item: InstallmentItem) => item.totalAmount - paidAmount(item)
 export const nextPayment = (item: InstallmentItem) => item.payments.find(p => p.status === 'scheduled')
 export const progress = (item: InstallmentItem) => Math.round((item.paidCount / item.installmentMonths) * 100)
+export function splitShares(amount: number, participants: string[]) {
+  const names = participants.length >= 2 ? participants : ['A', 'B']
+  const basic = Math.floor(amount / names.length)
+  return names.map((name, index) => ({ name, amount: basic + (index === 0 ? amount - basic * names.length : 0) }))
+}
+export const myShare = (item: InstallmentItem, amount: number) => item.splitPayment ? splitShares(amount, item.splitParticipants)[0].amount : amount
+export const myRemainingAmount = (item: InstallmentItem) => item.payments.filter(p => p.status === 'scheduled').reduce((sum, p) => sum + myShare(item, p.amount), 0)
 
 export function monthKey(date = new Date()) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}` }
 export function monthScheduled(items: InstallmentItem[], key = monthKey()) {
@@ -57,9 +65,10 @@ export function monthPaid(items: InstallmentItem[], key = monthKey()) {
 
 export const emptyForm = (): ItemFormData => ({
   title: '', totalAmount: '', installmentMonths: '12', firstPaymentDate: new Date().toISOString().slice(0, 10),
-  paymentMethod: '', merchant: '', category: '전자기기', memo: '', paidCount: '0',
+  paymentMethod: '', merchant: '', category: '전자기기', memo: '', paidCount: '0', splitPayment: false, splitParticipants: ['A', 'B'],
 })
 
 export function formFromItem(item: InstallmentItem): ItemFormData {
-  return { title: item.title, totalAmount: String(item.totalAmount), installmentMonths: String(item.installmentMonths), firstPaymentDate: item.firstPaymentDate, paymentMethod: item.paymentMethod, merchant: item.merchant, category: item.category, memo: item.memo, paidCount: String(item.paidCount) }
+  return { title: item.title, totalAmount: String(item.totalAmount), installmentMonths: String(item.installmentMonths), firstPaymentDate: item.firstPaymentDate, paymentMethod: item.paymentMethod, merchant: item.merchant, category: item.category, memo: item.memo, paidCount: String(item.paidCount), splitPayment: item.splitPayment || false, splitParticipants: item.splitParticipants?.length >= 2 ? item.splitParticipants : ['A', 'B'] }
 }
+

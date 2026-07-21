@@ -20,6 +20,8 @@ export interface InstallmentItem {
   merchant: string
   category: string
   memo: string
+  splitPayment: boolean
+  splitParticipants: string[]
   paidCount: number
   status: ItemStatus
   createdAt: string
@@ -38,6 +40,9 @@ export interface ItemFormData {
   category: string
   memo: string
   paidCount: string
+  splitPayment: boolean
+  splitParticipants: string[]
 }
 
 export type Tab = 'home' | 'list' | 'stats' | 'settings'
+
