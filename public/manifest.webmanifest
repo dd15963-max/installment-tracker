@@ -6,7 +6,7 @@
   "scope": "/installment-tracker/",
   "display": "standalone",
   "background_color": "#15141b",
-  "theme_color": "#7057e8",
+  "theme_color": "#0284c7",
   "icons": [
     {
       "src": "/installment-tracker/app-icon.png",
