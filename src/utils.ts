@@ -13,6 +13,16 @@ export function addMonthsClamped(dateString: string, months: number) {
   return `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(Math.min(day, lastDay))}`
 }
 
+export function calculatePaidCount(firstDate: string, months: number, today = new Date()) {
+  if (!firstDate || !Number.isFinite(months) || months < 1) return 0
+  const todayKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+  let count = 0
+  for (let index = 0; index < months; index += 1) {
+    if (addMonthsClamped(firstDate, index) < todayKey) count += 1
+  }
+  return Math.min(count, months)
+}
+
 export function createPayments(total: number, months: number, firstDate: string, paidCount = 0): InstallmentPayment[] {
   const basic = Math.floor(total / months)
   return Array.from({ length: months }, (_, index) => ({
