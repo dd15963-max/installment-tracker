@@ -36,17 +36,29 @@ export default function App() {
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem(DARK_KEY, JSON.stringify({ dark, splitNames })) }, [dark, splitNames])
   useEffect(() => { navigationRef.current = { tab, modal, selected } }, [tab, modal, selected])
   useEffect(() => {
+    const rootState = { installmentTrackerRoot: true }
     const guardState = { installmentTrackerGuard: true }
-    window.history.pushState(guardState, '')
+    const armBackGuard = () => {
+      if (!window.history.state?.installmentTrackerGuard) window.history.pushState(guardState, '', '#app')
+    }
+    window.history.replaceState(rootState, '', '#home')
+    armBackGuard()
     const handleBack = () => {
       const current = navigationRef.current
       if (current.modal === 'form' && current.selected) setModal('detail')
       else if (current.modal) setModal(null)
       else if (current.tab !== 'home') setTab('home')
-      window.history.pushState(guardState, '')
+      armBackGuard()
     }
+    const handleResume = () => { if (document.visibilityState === 'visible') armBackGuard() }
     window.addEventListener('popstate', handleBack)
-    return () => window.removeEventListener('popstate', handleBack)
+    window.addEventListener('pageshow', armBackGuard)
+    document.addEventListener('visibilitychange', handleResume)
+    return () => {
+      window.removeEventListener('popstate', handleBack)
+      window.removeEventListener('pageshow', armBackGuard)
+      document.removeEventListener('visibilitychange', handleResume)
+    }
   }, [])
 
   const active = items.filter(i => i.status === 'active')
