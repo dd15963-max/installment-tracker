@@ -30,9 +30,24 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'active' | 'completed' | 'split' | 'all'>('active')
   const fileRef = useRef<HTMLInputElement>(null)
+  const navigationRef = useRef<{ tab: Tab; modal: 'form' | 'detail' | 'split' | null; selected: InstallmentItem | null }>({ tab, modal, selected })
 
   useEffect(() => { localStorage.setItem(DATA_KEY, JSON.stringify(items)) }, [items])
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem(DARK_KEY, JSON.stringify({ dark, splitNames })) }, [dark, splitNames])
+  useEffect(() => { navigationRef.current = { tab, modal, selected } }, [tab, modal, selected])
+  useEffect(() => {
+    const guardState = { installmentTrackerGuard: true }
+    window.history.pushState(guardState, '')
+    const handleBack = () => {
+      const current = navigationRef.current
+      if (current.modal === 'form' && current.selected) setModal('detail')
+      else if (current.modal) setModal(null)
+      else if (current.tab !== 'home') setTab('home')
+      window.history.pushState(guardState, '')
+    }
+    window.addEventListener('popstate', handleBack)
+    return () => window.removeEventListener('popstate', handleBack)
+  }, [])
 
   const active = items.filter(i => i.status === 'active')
   const remaining = active.reduce((sum, i) => sum + remainingAmount(i), 0)
