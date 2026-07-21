@@ -15,10 +15,10 @@ export function addMonthsClamped(dateString: string, months: number) {
 
 export function calculatePaidCount(firstDate: string, months: number, today = new Date()) {
   if (!firstDate || !Number.isFinite(months) || months < 1) return 0
-  const currentMonthKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`
+  const todayKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
   let count = 0
   for (let index = 0; index < months; index += 1) {
-    if (addMonthsClamped(firstDate, index).slice(0, 7) < currentMonthKey) count += 1
+    if (addMonthsClamped(firstDate, index) < todayKey) count += 1
   }
   return Math.min(count, months)
 }
