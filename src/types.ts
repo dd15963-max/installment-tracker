@@ -44,6 +44,11 @@ export interface ItemFormData {
   splitParticipants: string[]
 }
 
+export interface RecurringActivePeriod {
+  startMonth: string
+  endMonth: string | null
+}
+
 export interface RecurringExpense {
   id: string
   title: string
@@ -56,6 +61,7 @@ export interface RecurringExpense {
   enabled: boolean
   splitPayment: boolean
   splitParticipants: string[]
+  activePeriods: RecurringActivePeriod[]
   createdAt: string
   updatedAt: string
 }
@@ -70,6 +76,7 @@ export interface RecurringExpenseFormData {
   enabled: boolean
   splitPayment: boolean
   splitParticipants: string[]
+  startMonth: string
 }
 
 export type Tab = 'home' | 'list' | 'recurring' | 'stats' | 'settings'

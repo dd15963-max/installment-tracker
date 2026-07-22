@@ -1,4 +1,4 @@
-import type { InstallmentItem, InstallmentPayment, ItemFormData } from './types'
+import type { InstallmentItem, InstallmentPayment, ItemFormData, RecurringExpense } from './types'
 
 export const won = new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 })
 export const formatWon = (value: number) => won.format(value)
@@ -66,6 +66,17 @@ export const myShare = (item: InstallmentItem, amount: number) => item.splitPaym
 export const myRemainingAmount = (item: InstallmentItem) => item.payments.filter(p => p.status === 'scheduled').reduce((sum, p) => sum + myShare(item, p.amount), 0)
 
 export function monthKey(date = new Date()) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}` }
+export function shiftMonthKey(key: string, offset: number) {
+  const [year, month] = key.split('-').map(Number)
+  return monthKey(new Date(year, month - 1 + offset, 1))
+}
+export function formatMonthKey(key: string) {
+  const [year, month] = key.split('-').map(Number)
+  return `${year}년 ${month}월`
+}
+export function recurringActiveInMonth(expense: RecurringExpense, key: string) {
+  return expense.activePeriods.some(period => period.startMonth <= key && (!period.endMonth || period.endMonth >= key))
+}
 export function monthScheduled(items: InstallmentItem[], key = monthKey()) {
   return items.flatMap(i => i.payments).filter(p => p.scheduledDate.startsWith(key)).reduce((sum, p) => sum + p.amount, 0)
 }
