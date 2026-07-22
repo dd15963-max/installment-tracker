@@ -1,7 +1,7 @@
 {
-  "name": "할부 기록장",
-  "short_name": "할부 기록장",
-  "description": "내 할부 내역을 한눈에 관리하는 모바일 할부 기록장",
+  "name": "지출노트",
+  "short_name": "지출노트",
+  "description": "매월 지출을 한눈에 관리하는 지출노트",
   "start_url": "/installment-tracker/",
   "scope": "/installment-tracker/",
   "display": "standalone",
