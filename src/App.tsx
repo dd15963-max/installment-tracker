@@ -12,7 +12,16 @@ const DARK_KEY = 'installment-tracker-settings'
 const PAYMENT_RESTORE_KEY = 'installment-tracker-payment-restore-v2'
 const defaultSplitNames = ['나', '참여자 2']
 const categories = ['전자기기', '생활가전', '가구', '자동차', '여행', '교육', '병원', '쇼핑', '기타']
-type AppModal = 'form' | 'detail' | 'split' | 'ending' | null
+type AppModal = 'form' | 'detail' | 'split' | 'ending' | 'add-choice' | null
+type InstallmentSort = 'next' | 'my-desc' | 'my-asc' | 'total-desc' | 'total-asc' | 'end' | 'remaining-desc' | 'remaining-asc' | 'progress-desc' | 'recent'
+const INSTALLMENT_SORT_KEY = 'expense-note-installment-sort'
+const tabOrder: Tab[] = ['home', 'list', 'recurring', 'stats', 'settings']
+const installmentSorts: InstallmentSort[] = ['next', 'my-desc', 'my-asc', 'total-desc', 'total-asc', 'end', 'remaining-desc', 'remaining-asc', 'progress-desc', 'recent']
+
+function loadInstallmentSort(): InstallmentSort {
+  const stored = localStorage.getItem(INSTALLMENT_SORT_KEY) as InstallmentSort | null
+  return stored && installmentSorts.includes(stored) ? stored : 'next'
+}
 
 function normalizeItems(items: InstallmentItem[], restoreDuePayments = false): InstallmentItem[] {
   const now = new Date()
@@ -74,6 +83,7 @@ export default function App() {
   const [items, setItems] = useState<InstallmentItem[]>(loadItems)
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>(loadRecurring)
   const [recurringAddSignal, setRecurringAddSignal] = useState(0)
+  const [pendingRecurringAdd, setPendingRecurringAdd] = useState(false)
   const [tab, setTab] = useState<Tab>('home')
   const [selectedMonth, setSelectedMonth] = useState(monthKey())
   const [dark, setDark] = useState(() => loadSettings().dark)
@@ -83,10 +93,19 @@ export default function App() {
   const [form, setForm] = useState<ItemFormData>(emptyForm)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'active' | 'completed' | 'split' | 'all'>('active')
+  const [installmentSort, setInstallmentSort] = useState<InstallmentSort>(loadInstallmentSort)
+  const swipeStart = useRef<{ x: number; y: number; time: number; blocked: boolean } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { localStorage.setItem(DATA_KEY, JSON.stringify(items)) }, [items])
   useEffect(() => { localStorage.setItem(RECURRING_KEY, JSON.stringify(recurringExpenses)) }, [recurringExpenses])
+  useEffect(() => { localStorage.setItem(INSTALLMENT_SORT_KEY, installmentSort) }, [installmentSort])
+  useEffect(() => {
+    if (tab === 'recurring' && pendingRecurringAdd) {
+      setRecurringAddSignal(value => value + 1)
+      setPendingRecurringAdd(false)
+    }
+  }, [tab, pendingRecurringAdd])
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem(DARK_KEY, JSON.stringify({ dark, splitNames })) }, [dark, splitNames])
   useEffect(() => {
     window.history.replaceState({ installmentTracker: true, tab: 'home', modal: null }, '', '#home')
@@ -131,9 +150,42 @@ export default function App() {
 
   function pushView(nextTab: Tab, nextModal: AppModal, hash: string) { window.history.pushState({ installmentTracker: true, tab: nextTab, modal: nextModal }, '', hash) }
   function selectTab(nextTab: Tab) { if (nextTab === tab && !modal) return; pushView(nextTab, null, `#${nextTab}`); setModal(null); setTab(nextTab) }
+  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    if (modal || event.touches.length !== 1) { swipeStart.current = null; return }
+    const touch = event.touches[0]
+    const target = event.target instanceof Element ? event.target : null
+    const blockedTarget = !!target?.closest('input, textarea, select, [contenteditable="true"], [data-swipe-ignore], .recharts-wrapper')
+    const edgeGesture = touch.clientX < 28 || touch.clientX > window.innerWidth - 28
+    swipeStart.current = { x: touch.clientX, y: touch.clientY, time: Date.now(), blocked: blockedTarget || edgeGesture }
+  }
+
+  function handleTouchEnd(event: React.TouchEvent<HTMLDivElement>) {
+    const start = swipeStart.current
+    swipeStart.current = null
+    if (!start || start.blocked || event.changedTouches.length !== 1 || modal) return
+    const touch = event.changedTouches[0]
+    const deltaX = touch.clientX - start.x
+    const deltaY = touch.clientY - start.y
+    const elapsed = Date.now() - start.time
+    if (elapsed > 900 || Math.abs(deltaX) < 70 || Math.abs(deltaX) < Math.abs(deltaY) * 1.4) return
+    const currentIndex = tabOrder.indexOf(tab)
+    const nextIndex = currentIndex + (deltaX < 0 ? 1 : -1)
+    if (nextIndex >= 0 && nextIndex < tabOrder.length) selectTab(tabOrder[nextIndex])
+  }
+
   function closeView() { if (window.history.state?.installmentTracker) window.history.back(); else setModal(null) }
-  function primaryAdd() { if (tab === 'recurring') setRecurringAddSignal(value => value + 1); else openAdd() }
-  function openAdd() { const next = emptyForm(); next.splitParticipants = splitNames.slice(0, 2); pushView(tab, 'form', '#add'); setSelected(null); setForm(next); setModal('form') }
+  function openAddChoice() { pushView(tab, 'add-choice', '#add-choice'); setModal('add-choice') }
+  function openAdd(replaceHistory = false) {
+    const next = emptyForm()
+    next.splitParticipants = splitNames.slice(0, 2)
+    if (replaceHistory) window.history.replaceState({ installmentTracker: true, tab, modal: 'form' }, '', '#add')
+    else pushView(tab, 'form', '#add')
+    setSelected(null); setForm(next); setModal('form')
+  }
+  function openRecurringAdd() {
+    window.history.replaceState({ installmentTracker: true, tab: 'recurring', modal: null }, '', '#recurring')
+    setModal(null); setTab('recurring'); setPendingRecurringAdd(true)
+  }
   function openDetail(item: InstallmentItem) { pushView(tab, 'detail', `#detail-${item.id}`); setSelected(item); setModal('detail') }
   function openEdit(item: InstallmentItem) { pushView(tab, 'form', `#edit-${item.id}`); setSelected(item); setForm(formFromItem(item)); setModal('form') }
   function save(e: React.FormEvent) {
@@ -160,17 +212,18 @@ export default function App() {
   function exportData() { const blob = new Blob([JSON.stringify({ version: 3, exportedAt: new Date().toISOString(), items, recurringExpenses, settings: { dark, splitNames } }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `installment-tracker-backup-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href) }
   function importData(e: React.ChangeEvent<HTMLInputElement>) { const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { const parsed = JSON.parse(String(reader.result)); const incoming = Array.isArray(parsed) ? parsed : parsed.items; if (!Array.isArray(incoming)) throw new Error(); if (confirm('현재 저장된 데이터가 불러온 데이터로 교체됩니다. 계속하시겠습니까?')) { setItems(normalizeItems(incoming)); setRecurringExpenses(Array.isArray(parsed.recurringExpenses) ? normalizeRecurringExpenses(parsed.recurringExpenses) : []); if (Array.isArray(parsed.settings?.splitNames)) setSplitNames(defaultSplitNames.map((name, index) => parsed.settings.splitNames[index] || name)); if (typeof parsed.settings?.dark === 'boolean') setDark(parsed.settings.dark) } } catch { alert('올바른 지출노트 백업 파일이 아닙니다.') } }; reader.readAsText(file); e.target.value = '' }
 
-  return <div className="mx-auto min-h-screen max-w-[480px] overflow-x-hidden bg-[#f8f7fb] shadow-2xl dark:bg-[#15141b] dark:text-white">
+  return <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} onTouchCancel={() => { swipeStart.current = null }} className="mx-auto min-h-screen max-w-[480px] touch-pan-y overflow-x-hidden bg-[#f8f7fb] shadow-2xl dark:bg-[#15141b] dark:text-white">
     <main className="safe-bottom min-h-screen">
       {tab === 'home' && <HomeView monthItems={monthInstallments} activeCount={active.length} selectedMonth={selectedMonth} monthOptions={monthOptions} setSelectedMonth={setSelectedMonth} scheduled={scheduled} paid={paidInMonth} scheduledRemaining={scheduledRemaining} recurringTotal={recurringTotal} totalMonthlyExpense={totalMonthlyExpense} installmentMyTotal={installmentMyTotal} recurringMyTotal={recurringMyTotal} personalMonthlyExpense={personalMonthlyExpense} sharedReimbursement={sharedReimbursement} endingInMonth={endingInMonth} remaining={remaining} splitTotal={splitMonthTotal} splitMine={splitMonthMine} onOpen={openDetail} onAdd={openAdd} onOpenSplit={() => { pushView(tab, 'split', '#split'); setModal('split') }} onOpenEnding={() => { pushView(tab, 'ending', '#ending'); setModal('ending') }} />}
-      {tab === 'list' && <ListView items={visible} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} onOpen={openDetail} />}
+      {tab === 'list' && <ListView items={visible} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} sort={installmentSort} setSort={setInstallmentSort} onOpen={openDetail} />}
       {tab === 'recurring' && <RecurringView expenses={recurringExpenses} setExpenses={setRecurringExpenses} addSignal={recurringAddSignal} participantDefaults={splitNames} />}
       {tab === 'stats' && <StatsView items={items} recurringExpenses={recurringExpenses} remaining={remaining} selectedMonth={selectedMonth} monthOptions={monthOptions} setSelectedMonth={setSelectedMonth} />}
       {tab === 'settings' && <SettingsView dark={dark} setDark={setDark} splitNames={splitNames} updateSplitName={updateSplitName} exportData={exportData} importClick={() => fileRef.current?.click()} clear={() => { if(confirm('모든 데이터를 초기화하시겠습니까?')) { setItems([]); setRecurringExpenses([]) } }} />}
     </main>
     <input ref={fileRef} type="file" accept="application/json" className="hidden" onChange={importData} />
     <Nav tab={tab} setTab={selectTab} />
-    <button onClick={primaryAdd} aria-label={tab === 'recurring' ? '고정지출 추가' : '할부 추가'} className="fixed bottom-24 right-5 z-30 grid h-14 w-14 place-items-center rounded-full border-4 border-[#f8f7fb] bg-[#0284c7] text-white shadow-xl dark:border-[#15141b] sm:right-[calc(50%-220px)]"><CirclePlus size={27}/></button>
+    <button data-swipe-ignore onClick={openAddChoice} aria-label="지출 추가" className="fixed bottom-24 right-5 z-30 grid h-14 w-14 place-items-center rounded-full border-4 border-[#f8f7fb] bg-[#0284c7] text-white shadow-xl dark:border-[#15141b] sm:right-[calc(50%-220px)]"><CirclePlus size={27}/></button>
+    {modal === 'add-choice' && <AddChoiceModal onClose={closeView} onInstallment={() => openAdd(true)} onRecurring={openRecurringAdd} />}
     {modal === 'form' && <FormModal form={form} setForm={setForm} onClose={closeView} onSave={save} editing={!!selected} participantDefaults={splitNames} />}
     {modal === 'split' && <SplitMonthlyModal items={items} recurringExpenses={recurringExpenses} initialMonth={selectedMonth} onClose={closeView} />}
     {modal === 'ending' && <EndingInstallmentsModal items={endingItems} month={selectedMonth} onClose={closeView} onOpen={openDetail} />}
@@ -181,14 +234,14 @@ export default function App() {
 function Header({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: React.ReactNode }) { return <header className="flex items-end justify-between px-5 pb-5 pt-8"><div>{eyebrow && <p className="mb-1 text-sm font-semibold text-[#0284c7]">{eyebrow}</p>}<h1 className="text-[28px] font-extrabold tracking-[-1.2px]">{title}</h1></div>{action}</header> }
 
 function MonthSelector({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
-  return <div className="px-5 pb-4"><div className="flex items-center gap-2 rounded-2xl bg-white p-2 dark:bg-[#211f29]"><button onClick={() => onChange(shiftMonthKey(value, -1))} aria-label="이전 달" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-gray-500"><ArrowLeft size={18}/></button><select value={value} onChange={event => onChange(event.target.value)} aria-label="조회할 월" className="h-10 min-w-0 flex-1 rounded-xl border-0 bg-[#f8f7fb] px-3 text-center font-extrabold outline-none focus:ring-2 focus:ring-[#0284c7] dark:bg-[#15141b]">{options.map(month => <option key={month} value={month}>{formatMonthKey(month)}</option>)}</select><button onClick={() => onChange(shiftMonthKey(value, 1))} aria-label="다음 달" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-gray-500"><ChevronRight size={18}/></button></div></div>
+  return <div data-swipe-ignore className="px-5 pb-4"><div className="flex items-center gap-2 rounded-2xl bg-white p-2 dark:bg-[#211f29]"><button onClick={() => onChange(shiftMonthKey(value, -1))} aria-label="이전 달" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-gray-500"><ArrowLeft size={18}/></button><select value={value} onChange={event => onChange(event.target.value)} aria-label="조회할 월" className="h-10 min-w-0 flex-1 rounded-xl border-0 bg-[#f8f7fb] px-3 text-center font-extrabold outline-none focus:ring-2 focus:ring-[#0284c7] dark:bg-[#15141b]">{options.map(month => <option key={month} value={month}>{formatMonthKey(month)}</option>)}</select><button onClick={() => onChange(shiftMonthKey(value, 1))} aria-label="다음 달" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-gray-500"><ChevronRight size={18}/></button></div></div>
 }
 
 function HomeView({ monthItems, activeCount, selectedMonth, monthOptions, setSelectedMonth, scheduled, paid, scheduledRemaining, recurringTotal, totalMonthlyExpense, installmentMyTotal, recurringMyTotal, personalMonthlyExpense, sharedReimbursement, endingInMonth, remaining, splitTotal, splitMine, onOpen, onAdd, onOpenSplit, onOpenEnding }: { monthItems: InstallmentItem[]; activeCount: number; selectedMonth: string; monthOptions: string[]; setSelectedMonth: (value: string) => void; scheduled: number; paid: number; scheduledRemaining: number; recurringTotal: number; totalMonthlyExpense: number; installmentMyTotal: number; recurringMyTotal: number; personalMonthlyExpense: number; sharedReimbursement: number; endingInMonth: number; remaining: number; splitTotal: number; splitMine: number; onOpen: (item: InstallmentItem) => void; onAdd: () => void; onOpenSplit: () => void; onOpenEnding: () => void }) {
   const monthNumber = Number(selectedMonth.slice(5, 7))
   const isPast = selectedMonth < monthKey()
   return <>
-    <Header eyebrow="월별 지출 관리" title="지출노트" action={<button onClick={onAdd} aria-label="할부 추가" className="grid h-11 w-11 place-items-center rounded-2xl bg-[#0284c7] text-white shadow-lg shadow-sky-200 dark:shadow-none"><CirclePlus/></button>}/>
+    <Header eyebrow="월별 지출 관리" title="지출노트"/>
     <MonthSelector value={selectedMonth} options={monthOptions} onChange={setSelectedMonth}/>
     <section className="px-5">
       <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#0284c7] to-[#38bdf8] p-5 text-white shadow-xl shadow-sky-200/60 dark:shadow-none"><div className="absolute -right-8 -top-10 h-36 w-36 rounded-full border-[24px] border-white/10"/><p className="text-sm font-semibold text-white/75">{monthNumber}월 {isPast ? '지출 금액' : '예상 지출'}</p><p className="mt-1 text-xs text-white/65">내 실질 부담액</p><p className="mt-0.5 text-[30px] font-extrabold tracking-tight">{formatWon(personalMonthlyExpense)}</p><div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/20 pt-4"><div><p className="text-xs text-white/65">전체 결제액</p><p className="mt-1 font-bold">{formatWon(totalMonthlyExpense)}</p></div><div><p className="text-xs text-white/65">나눠 받을 금액</p><p className="mt-1 font-bold">{formatWon(sharedReimbursement)}</p></div></div><p className="mt-3 text-xs text-white/65">내 부담 기준 · 할부 {formatWon(installmentMyTotal)} · 고정지출 {formatWon(recurringMyTotal)}</p></div>
@@ -221,8 +274,35 @@ function Empty({ onAdd, message = '등록된 할부가 없어요' }: { onAdd: ()
   return <div className="rounded-[22px] border border-dashed border-gray-200 py-12 text-center dark:border-white/10"><CreditCard className="mx-auto text-gray-300" size={32}/><p className="mt-3 text-sm font-bold text-gray-400">{message}</p><button onClick={onAdd} className="mt-3 text-sm font-bold text-[#0284c7]">할부 등록하기</button></div>
 }
 
-function ListView({ items, search, setSearch, filter, setFilter, onOpen }: { items: InstallmentItem[]; search: string; setSearch: (value: string) => void; filter: 'active' | 'completed' | 'split' | 'all'; setFilter: (value: 'active' | 'completed' | 'split' | 'all') => void; onOpen: (item: InstallmentItem) => void }) {
-  return <><Header eyebrow="내역 관리" title="모든 할부"/><div className="px-5"><div className="flex h-12 items-center gap-2 rounded-2xl bg-white px-4 dark:bg-[#211f29]"><Search size={18} className="text-gray-400"/><input value={search} onChange={event => setSearch(event.target.value)} placeholder="품목, 카드사, 구매처 검색" className="w-full bg-transparent text-sm outline-none"/></div><div className="hide-scroll mt-3 flex gap-2 overflow-x-auto">{(['active', 'split', 'completed', 'all'] as const).map(value => <button key={value} onClick={() => setFilter(value)} className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-bold ${filter === value ? 'bg-[#0284c7] text-white' : 'bg-white text-gray-500 dark:bg-[#211f29]'}`}>{value === 'active' ? '진행 중' : value === 'split' ? '나눠 내기' : value === 'completed' ? '완료' : '전체'}</button>)}</div><div className="mt-5 space-y-3">{items.length ? items.map(item => <ItemCard key={item.id} item={item} onClick={() => onOpen(item)}/>) : <p className="py-16 text-center text-sm text-gray-400">조건에 맞는 내역이 없어요.</p>}</div></div></>
+function installmentPaymentAmount(item: InstallmentItem) {
+  return nextPayment(item)?.amount || item.payments.at(-1)?.amount || 0
+}
+
+function ListView({ items, search, setSearch, filter, setFilter, sort, setSort, onOpen }: { items: InstallmentItem[]; search: string; setSearch: (value: string) => void; filter: 'active' | 'completed' | 'split' | 'all'; setFilter: (value: 'active' | 'completed' | 'split' | 'all') => void; sort: InstallmentSort; setSort: (value: InstallmentSort) => void; onOpen: (item: InstallmentItem) => void }) {
+  const sorted = useMemo(() => [...items].sort((a, b) => {
+    const aAmount = installmentPaymentAmount(a)
+    const bAmount = installmentPaymentAmount(b)
+    if (sort === 'my-desc') return myShare(b, bAmount) - myShare(a, aAmount)
+    if (sort === 'my-asc') return myShare(a, aAmount) - myShare(b, bAmount)
+    if (sort === 'total-desc') return bAmount - aAmount
+    if (sort === 'total-asc') return aAmount - bAmount
+    if (sort === 'end') return (a.payments.at(-1)?.scheduledDate || '').localeCompare(b.payments.at(-1)?.scheduledDate || '')
+    if (sort === 'remaining-desc') return remainingAmount(b) - remainingAmount(a)
+    if (sort === 'remaining-asc') return remainingAmount(a) - remainingAmount(b)
+    if (sort === 'progress-desc') return progress(b) - progress(a)
+    if (sort === 'recent') return b.createdAt.localeCompare(a.createdAt)
+    return (nextPayment(a)?.scheduledDate || a.payments.at(-1)?.scheduledDate || '').localeCompare(nextPayment(b)?.scheduledDate || b.payments.at(-1)?.scheduledDate || '')
+  }), [items, sort])
+
+  return <>
+    <Header eyebrow="내역 관리" title="모든 할부"/>
+    <div className="px-5">
+      <div className="flex h-12 items-center gap-2 rounded-2xl bg-white px-4 dark:bg-[#211f29]"><Search size={18} className="text-gray-400"/><input value={search} onChange={event => setSearch(event.target.value)} placeholder="품목, 카드사, 구매처 검색" className="w-full bg-transparent text-sm outline-none"/></div>
+      <div data-swipe-ignore className="hide-scroll mt-3 flex gap-2 overflow-x-auto">{(['active', 'split', 'completed', 'all'] as const).map(value => <button key={value} onClick={() => setFilter(value)} className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-bold ${filter === value ? 'bg-[#0284c7] text-white' : 'bg-white text-gray-500 dark:bg-[#211f29]'}`}>{value === 'active' ? '진행 중' : value === 'split' ? '나눠 내기' : value === 'completed' ? '완료' : '전체'}</button>)}</div>
+      <div className="mt-3"><select data-swipe-ignore value={sort} onChange={event => setSort(event.target.value as InstallmentSort)} aria-label="할부 정렬" className="h-11 w-full rounded-xl border-0 bg-white px-3 font-bold text-gray-600 outline-none dark:bg-[#211f29] dark:text-gray-200"><option value="next">결제일 빠른 순</option><option value="my-desc">내 월 부담액 높은 순</option><option value="my-asc">내 월 부담액 낮은 순</option><option value="total-desc">전체 월 납부액 높은 순</option><option value="total-asc">전체 월 납부액 낮은 순</option><option value="end">종료 빠른 순</option><option value="remaining-desc">남은 금액 높은 순</option><option value="remaining-asc">남은 금액 낮은 순</option><option value="progress-desc">진행률 높은 순</option><option value="recent">최근 등록 순</option></select></div>
+      <div className="mt-5 space-y-3">{sorted.length ? sorted.map(item => <ItemCard key={item.id} item={item} onClick={() => onOpen(item)}/>) : <p className="py-16 text-center text-sm text-gray-400">조건에 맞는 내역이 없어요.</p>}</div>
+    </div>
+  </>
 }
 
 function StatsView({ items, recurringExpenses, remaining, selectedMonth, monthOptions, setSelectedMonth }: { items: InstallmentItem[]; recurringExpenses: RecurringExpense[]; remaining: number; selectedMonth: string; monthOptions: string[]; setSelectedMonth: (value: string) => void }) {
@@ -243,9 +323,20 @@ function StatsView({ items, recurringExpenses, remaining, selectedMonth, monthOp
 function SettingsView({ dark,setDark,splitNames,updateSplitName,exportData,importClick,clear }: {dark:boolean;setDark:(v:boolean)=>void;splitNames:string[];updateSplitName:(index:number,value:string)=>void;exportData:()=>void;importClick:()=>void;clear:()=>void}) { return <><Header eyebrow="환경 설정" title="설정"/><div className="space-y-3 px-5"><Setting icon={dark?<Moon/>:<Sun/>} title="다크 모드" desc="어두운 화면으로 눈의 피로를 줄여요" right={<button onClick={()=>setDark(!dark)} className={`h-7 w-12 rounded-full p-1 transition ${dark?'bg-[#0284c7]':'bg-gray-200'}`}><span className={`block h-5 w-5 rounded-full bg-white transition ${dark?'translate-x-5':''}`}/></button>}/><div className="rounded-[20px] bg-white p-4 dark:bg-[#211f29]"><div className="mb-4"><p className="font-extrabold">나눠 내기 이름</p><p className="mt-1 text-xs text-gray-400">1번은 나, 2번은 함께 내는 기본 상대 이름이에요.</p></div><div className="space-y-3">{splitNames.map((name,index)=><label key={index} className="block"><span className="mb-1 block text-xs font-bold text-gray-400">{index===0?'1번 · 내 이름':`${index+1}번 · 참여자`}</span><input value={name} onChange={e=>updateSplitName(index,e.target.value)} onBlur={()=>{if(!name.trim())updateSplitName(index,index===0?'나':'참여자 2')}} className="h-11 w-full rounded-xl border-0 bg-[#f8f7fb] px-3 outline-none focus:ring-2 focus:ring-[#0284c7] dark:bg-[#15141b]"/></label>)}</div><p className="mt-3 text-[11px] leading-4 text-gray-400">3명 이상이면 추가 인원의 이름은 할부 등록 시 입력합니다. 이름 변경 시 기존 내역에도 바로 반영됩니다.</p></div><Setting icon={<Upload/>} title="데이터 내보내기" desc="모든 기록을 JSON으로 백업해요" onClick={exportData}/><Setting icon={<Download/>} title="데이터 불러오기" desc="백업 파일로 기록을 복원해요" onClick={importClick}/><Setting icon={<Trash2/>} title="전체 데이터 초기화" desc="저장된 모든 기록을 삭제해요" onClick={clear} danger/><div className="pt-8 text-center text-xs leading-5 text-gray-400">지출노트 2.0.0<br/>데이터는 이 기기의 브라우저에만 저장됩니다.</div></div></> }
 function Setting({icon,title,desc,right,onClick,danger}:{icon:React.ReactNode;title:string;desc:string;right?:React.ReactNode;onClick?:()=>void;danger?:boolean}) { return <button onClick={onClick} className="flex min-h-[76px] w-full items-center gap-3 rounded-[20px] bg-white p-4 text-left dark:bg-[#211f29]"><span className={`grid h-10 w-10 place-items-center rounded-xl ${danger?'bg-red-50 text-red-500 dark:bg-red-500/10':'bg-sky-50 text-[#0284c7] dark:bg-sky-500/10'}`}>{icon}</span><span className="min-w-0 flex-1"><b className={danger?'text-red-500':''}>{title}</b><span className="mt-1 block text-xs text-gray-400">{desc}</span></span>{right||<ChevronRight size={18} className="text-gray-300"/>}</button> }
 
-function Nav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}) { const nav=[['home','홈',Home],['list','할부',List],['recurring','고정지출',Database],['stats','통계',BarChart3],['settings','설정',Settings]] as const; return <nav className="fixed bottom-0 left-1/2 z-30 flex h-[76px] w-full max-w-[480px] -translate-x-1/2 items-center justify-around border-t border-gray-100 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-white/5 dark:bg-[#211f29]/95">{nav.map(([key,label,Icon])=><button key={key} onClick={()=>setTab(key)} className={`flex h-14 min-w-[54px] flex-col items-center justify-center gap-1 text-[10px] font-bold ${tab===key?'text-[#0284c7]':'text-gray-400'}`}><Icon size={21}/><span>{label}</span></button>)}</nav> }
+function Nav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}) { const nav=[['home','홈',Home],['list','할부',List],['recurring','고정지출',Database],['stats','통계',BarChart3],['settings','설정',Settings]] as const; return <nav data-swipe-ignore className="fixed bottom-0 left-1/2 z-30 flex h-[76px] w-full max-w-[480px] -translate-x-1/2 items-center justify-around border-t border-gray-100 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-white/5 dark:bg-[#211f29]/95">{nav.map(([key,label,Icon])=><button key={key} onClick={()=>setTab(key)} className={`flex h-14 min-w-[54px] flex-col items-center justify-center gap-1 text-[10px] font-bold ${tab===key?'text-[#0284c7]':'text-gray-400'}`}><Icon size={21}/><span>{label}</span></button>)}</nav> }
 
-function ModalShell({children,onClose}:{children:React.ReactNode;onClose:()=>void}) { return <div className="fixed inset-0 z-50 bg-black/35 backdrop-blur-sm"><div className="absolute inset-x-0 bottom-0 mx-auto max-h-[94vh] max-w-[480px] overflow-y-auto rounded-t-[30px] bg-[#f8f7fb] dark:bg-[#15141b]"><button onClick={onClose} aria-label="닫기" className="absolute right-5 top-5 z-10 grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm dark:bg-[#292731]"><X size={19}/></button>{children}</div></div> }
+function ModalShell({children,onClose}:{children:React.ReactNode;onClose:()=>void}) { return <div data-swipe-ignore className="fixed inset-0 z-50 bg-black/35 backdrop-blur-sm"><div className="absolute inset-x-0 bottom-0 mx-auto max-h-[94vh] max-w-[480px] overflow-y-auto rounded-t-[30px] bg-[#f8f7fb] dark:bg-[#15141b]"><button onClick={onClose} aria-label="닫기" className="absolute right-5 top-5 z-10 grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm dark:bg-[#292731]"><X size={19}/></button>{children}</div></div> }
+function AddChoiceModal({ onClose, onInstallment, onRecurring }: { onClose: () => void; onInstallment: () => void; onRecurring: () => void }) {
+  return <ModalShell onClose={onClose}><div className="px-5 pb-8 pt-7">
+    <p className="text-sm font-bold text-[#0284c7]">새 지출 등록</p>
+    <h2 className="mt-1 pr-12 text-2xl font-extrabold">무엇을 추가할까요?</h2>
+    <div className="mt-6 space-y-3">
+      <button onClick={onInstallment} className="flex w-full items-center gap-4 rounded-[22px] bg-white p-5 text-left transition active:scale-[.98] dark:bg-[#211f29]"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-sky-50 text-[#0284c7] dark:bg-sky-500/10"><CreditCard size={23}/></span><span className="min-w-0 flex-1"><b className="text-lg">할부 추가</b><span className="mt-1 block text-xs text-gray-400">할부 금액과 납부 회차를 기록해요.</span></span><ChevronRight size={19} className="text-gray-300"/></button>
+      <button onClick={onRecurring} className="flex w-full items-center gap-4 rounded-[22px] bg-white p-5 text-left transition active:scale-[.98] dark:bg-[#211f29]"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-sky-50 text-[#0284c7] dark:bg-sky-500/10"><Database size={23}/></span><span className="min-w-0 flex-1"><b className="text-lg">고정지출 추가</b><span className="mt-1 block text-xs text-gray-400">매월 반복되는 지출을 기록해요.</span></span><ChevronRight size={19} className="text-gray-300"/></button>
+    </div>
+  </div></ModalShell>
+}
+
 function FormModal({form,setForm,onClose,onSave,editing,participantDefaults}:{form:ItemFormData;setForm:(f:ItemFormData)=>void;onClose:()=>void;onSave:(e:React.FormEvent)=>void;editing:boolean;participantDefaults:string[]}) { const field=(key:keyof ItemFormData,value:string)=>setForm({...form,[key]:value}); const [manualPaidCount,setManualPaidCount]=useState(editing); const autoPaidCount=calculatePaidCount(form.firstPaymentDate,Number(form.installmentMonths)); useEffect(()=>{if(!manualPaidCount&&form.paidCount!==String(autoPaidCount))setForm({...form,paidCount:String(autoPaidCount)})},[form.firstPaymentDate,form.installmentMonths,manualPaidCount,autoPaidCount]); const monthOptions=['3','4','5','6','7','8','9','10','11','12','24','36','48','60']; const customMonth=!monthOptions.includes(form.installmentMonths); return <ModalShell onClose={onClose}><form onSubmit={onSave} className="px-5 pb-8 pt-7"><p className="text-sm font-bold text-[#0284c7]">{editing?'정보 변경':'새로운 기록'}</p><h2 className="mt-1 text-2xl font-extrabold">{editing?'할부 수정':'할부 등록'}</h2><div className="mt-6 space-y-4"><Input label="품목명 *" value={form.title} onChange={v=>field('title',v)} placeholder="예: 노트북" required/><Input label="총 결제 금액 *" type="number" value={form.totalAmount} onChange={v=>field('totalAmount',v)} placeholder="0" required/><div><label className="mb-2 block text-sm font-bold">할부 개월 수 *</label><select value={customMonth?'custom':form.installmentMonths} onChange={e=>field('installmentMonths',e.target.value==='custom'?'':e.target.value)} className="h-12 w-full rounded-2xl border-0 bg-white px-4 outline-none focus:ring-2 focus:ring-[#0284c7] dark:bg-[#211f29]" required><option value="" disabled>개월 수를 선택하세요</option>{monthOptions.map(v=><option key={v} value={v}>{v}개월</option>)}<option value="custom">직접 입력</option></select>{customMonth&&<input type="number" min="1" max="120" value={form.installmentMonths} onChange={e=>field('installmentMonths',e.target.value)} placeholder="1~120개월" className="mt-2 h-12 w-full rounded-2xl border-0 bg-white px-4 outline-none focus:ring-2 focus:ring-[#0284c7] dark:bg-[#211f29]" required/>}</div><Input label="첫 결제일 *" type="date" value={form.firstPaymentDate} onChange={v=>field('firstPaymentDate',v)} required/><div><div className="mb-2 flex items-center justify-between"><label className="text-sm font-bold">이미 납부한 회차</label><button type="button" onClick={()=>setManualPaidCount(!manualPaidCount)} className="text-xs font-bold text-[#0284c7]">{manualPaidCount?'자동 계산 사용':'직접 수정'}</button></div>{manualPaidCount?<input type="number" min="0" max={form.installmentMonths||undefined} value={form.paidCount} onChange={e=>field('paidCount',e.target.value)} className="h-12 w-full rounded-2xl border-0 bg-white px-4 outline-none focus:ring-2 focus:ring-[#0284c7] dark:bg-[#211f29]"/>:<div className="rounded-2xl bg-sky-50 p-4 dark:bg-sky-500/10"><div className="flex items-center justify-between"><span className="text-sm text-gray-500 dark:text-gray-300">첫 결제일 기준 자동 계산</span><b className="text-[#0284c7]">{autoPaidCount}회</b></div><p className="mt-2 text-xs text-gray-400">오늘 이전 결제일까지 납부 완료로 계산해요.</p></div>}</div><div className="rounded-[22px] bg-white p-4 dark:bg-[#211f29]"><div className="flex items-center justify-between"><div><p className="font-extrabold">나눠 내기</p><p className="mt-1 text-xs text-gray-400">여러 사람이 월 납부액을 균등하게 나눠요</p></div><button type="button" onClick={()=>setForm({...form,splitPayment:!form.splitPayment})} className={`h-7 w-12 rounded-full p-1 transition ${form.splitPayment?'bg-[#0284c7]':'bg-gray-200 dark:bg-white/10'}`}><span className={`block h-5 w-5 rounded-full bg-white transition ${form.splitPayment?'translate-x-5':''}`}/></button></div>{form.splitPayment&&<div className="mt-4 border-t border-gray-100 pt-4 dark:border-white/5"><label className="mb-2 block text-sm font-bold">참여 인원</label><select value={form.splitParticipants.length} onChange={e=>{const count=Number(e.target.value);setForm({...form,splitParticipants:Array.from({length:count},(_,i)=>participantDefaults[i]||`참여자 ${i+1}`)})}} className="h-12 w-full rounded-2xl border-0 bg-[#f8f7fb] px-4 outline-none dark:bg-[#15141b]">{Array.from({length:7},(_,i)=>i+2).map(n=><option key={n} value={n}>{n}명</option>)}</select><div className="mt-3 grid grid-cols-2 gap-2">{form.splitParticipants.map((name,index)=>index<2?<div key={index} className="rounded-xl bg-[#f8f7fb] p-3 dark:bg-[#15141b]"><p className="text-[10px] font-bold text-gray-400">{index===0?'내 이름':'기본 상대'}</p><p className="mt-1 truncate text-sm font-extrabold">{name}</p></div>:<label key={index} className="block"><span className="mb-1 block text-[10px] font-bold text-gray-400">{index+1}번 추가 참여자</span><input value={name} onChange={e=>{const names=[...form.splitParticipants];names[index]=e.target.value;setForm({...form,splitParticipants:names})}} className="h-11 w-full rounded-xl border-0 bg-[#f8f7fb] px-3 outline-none focus:ring-2 focus:ring-[#0284c7] dark:bg-[#15141b]"/></label>)}</div>{Number(form.totalAmount)>0&&Number(form.installmentMonths)>0&&<div className="mt-4 rounded-2xl bg-sky-50 p-3 text-sm dark:bg-sky-500/10"><p className="mb-2 text-xs font-bold text-[#0284c7]">월 예상 분담액</p>{splitShares(Math.floor(Number(form.totalAmount)/Number(form.installmentMonths)),form.splitParticipants).map((share,index)=><div key={index} className="flex justify-between py-1"><span>{share.name}</span><b>{formatWon(share.amount)}</b></div>)}</div>}</div>}</div><Input label="카드사 또는 결제수단" value={form.paymentMethod} onChange={v=>field('paymentMethod',v)} placeholder="예: 삼성카드"/><Input label="구매처" value={form.merchant} onChange={v=>field('merchant',v)} placeholder="예: 공식 온라인몰"/><div><label className="mb-2 block text-sm font-bold">카테고리</label><select value={form.category} onChange={e=>field('category',e.target.value)} className="h-12 w-full rounded-2xl border-0 bg-white px-4 outline-none dark:bg-[#211f29]">{categories.map(c=><option key={c}>{c}</option>)}</select></div><div><label className="mb-2 block text-sm font-bold">메모</label><textarea value={form.memo} onChange={e=>field('memo',e.target.value)} rows={3} className="w-full resize-none rounded-2xl border-0 bg-white p-4 outline-none focus:ring-2 focus:ring-[#0284c7] dark:bg-[#211f29]" placeholder="기억할 내용을 적어두세요"/></div></div><button className="mt-6 h-14 w-full rounded-2xl bg-[#0284c7] font-extrabold text-white shadow-lg shadow-sky-200 dark:shadow-none">{editing?'수정 내용 저장':'할부 등록하기'}</button></form></ModalShell> }
 function Input({label,value,onChange,type='text',placeholder,required,min}:{label:string;value:string;onChange:(v:string)=>void;type?:string;placeholder?:string;required?:boolean;min?:string}) { return <div><label className="mb-2 block text-sm font-bold">{label}</label><input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} required={required} min={min} className="h-12 w-full rounded-2xl border-0 bg-white px-4 outline-none focus:ring-2 focus:ring-[#0284c7] dark:bg-[#211f29]"/></div> }
 

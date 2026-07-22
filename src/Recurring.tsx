@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, CirclePlus, CreditCard, Pencil, Power, Search, Trash2, X } from 'lucide-react'
+import { ChevronRight, CreditCard, Pencil, Power, Search, Trash2, X } from 'lucide-react'
 import type { RecurringActivePeriod, RecurringExpense, RecurringExpenseFormData } from './types'
 import { formatMonthKey, formatWon, monthKey, recurringActiveInMonth, shiftMonthKey, splitShares } from './utils'
 
 export const recurringCategories = ['주거', '공과금', '통신', '보험', '구독', '운동', '저축', '대출', '교통', '교육', '기타']
+type RecurringSort = 'day' | 'my-desc' | 'my-asc' | 'total-desc' | 'total-asc' | 'category' | 'recent'
+const RECURRING_SORT_KEY = 'expense-note-recurring-sort'
+const recurringSorts: RecurringSort[] = ['day', 'my-desc', 'my-asc', 'total-desc', 'total-asc', 'category', 'recent']
+
+function loadRecurringSort(): RecurringSort {
+  const stored = localStorage.getItem(RECURRING_SORT_KEY) as RecurringSort | null
+  return stored && recurringSorts.includes(stored) ? stored : 'day'
+}
+
+function recurringMyAmount(expense: RecurringExpense) {
+  return expense.splitPayment ? splitShares(expense.amount, expense.splitParticipants)[0].amount : expense.amount
+}
 
 const blank = (): RecurringExpenseFormData => ({
   title: '', amount: '', paymentDay: '1', paymentMethod: '', category: '주거', memo: '',
@@ -55,7 +67,7 @@ function make(form: RecurringExpenseFormData, existing?: RecurringExpense): Recu
 }
 
 function Shell({ children, close }: { children: React.ReactNode; close: () => void }) {
-  return <div className="fixed inset-0 z-50 bg-black/35 backdrop-blur-sm"><div className="absolute inset-x-0 bottom-0 mx-auto max-h-[94vh] max-w-[480px] overflow-y-auto rounded-t-[30px] bg-[#f8f7fb] dark:bg-[#15141b]"><button onClick={close} className="absolute right-5 top-5 z-10 grid h-10 w-10 place-items-center rounded-full bg-white dark:bg-[#292731]"><X size={19}/></button>{children}</div></div>
+  return <div data-swipe-ignore className="fixed inset-0 z-50 bg-black/35 backdrop-blur-sm"><div className="absolute inset-x-0 bottom-0 mx-auto max-h-[94vh] max-w-[480px] overflow-y-auto rounded-t-[30px] bg-[#f8f7fb] dark:bg-[#15141b]"><button onClick={close} className="absolute right-5 top-5 z-10 grid h-10 w-10 place-items-center rounded-full bg-white dark:bg-[#292731]"><X size={19}/></button>{children}</div></div>
 }
 
 function Field({ label, value, set, type = 'text', min, max }: { label: string; value: string; set: (value: string) => void; type?: string; min?: string; max?: string }) {
@@ -108,7 +120,7 @@ export function RecurringView({ expenses, setExpenses, addSignal, participantDef
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
   const [category, setCategory] = useState('전체')
-  const [sort, setSort] = useState('day')
+  const [sort, setSort] = useState<RecurringSort>(loadRecurringSort)
   const [modal, setModal] = useState<'edit' | 'detail' | 'period' | null>(null)
   const [selected, setSelected] = useState<RecurringExpense | null>(null)
   const [form, setForm] = useState(blank)
@@ -127,12 +139,21 @@ export function RecurringView({ expenses, setExpenses, addSignal, participantDef
     if (addSignal !== lastAddSignal.current) add()
     lastAddSignal.current = addSignal
   }, [addSignal])
+  useEffect(() => { localStorage.setItem(RECURRING_SORT_KEY, sort) }, [sort])
 
   const rows = useMemo(() => expenses.filter(expense =>
     [expense.title, expense.category, expense.memo, expense.paymentMethod].join(' ').toLowerCase().includes(query.toLowerCase()) &&
     (status === 'all' || (status === 'enabled' ? expense.enabled : !expense.enabled)) &&
     (category === '전체' || expense.category === category)
-  ).sort((a, b) => sort === 'day' ? a.paymentDay - b.paymentDay : sort === 'desc' ? b.amount - a.amount : a.amount - b.amount), [expenses, query, status, category, sort])
+  ).sort((a, b) => {
+    if (sort === 'my-desc') return recurringMyAmount(b) - recurringMyAmount(a)
+    if (sort === 'my-asc') return recurringMyAmount(a) - recurringMyAmount(b)
+    if (sort === 'total-desc') return b.amount - a.amount
+    if (sort === 'total-asc') return a.amount - b.amount
+    if (sort === 'category') return a.category.localeCompare(b.category, 'ko') || a.paymentDay - b.paymentDay
+    if (sort === 'recent') return b.createdAt.localeCompare(a.createdAt)
+    return a.paymentDay - b.paymentDay
+  }), [expenses, query, status, category, sort])
 
   const save = (event: React.FormEvent) => {
     event.preventDefault()
@@ -184,12 +205,12 @@ export function RecurringView({ expenses, setExpenses, addSignal, participantDef
   const currentTotal = expenses.filter(expense => recurringActiveInMonth(expense, monthKey())).reduce((sum, expense) => sum + expense.amount, 0)
 
   return <>
-    <header className="flex items-end justify-between px-5 pb-5 pt-8"><div><p className="mb-1 text-sm font-semibold text-[#0284c7]">매월 반복 관리</p><h1 className="text-[28px] font-extrabold">고정지출</h1></div><button onClick={add} className="grid h-11 w-11 place-items-center rounded-2xl bg-[#0284c7] text-white"><CirclePlus/></button></header>
+    <header className="px-5 pb-5 pt-8"><div><p className="mb-1 text-sm font-semibold text-[#0284c7]">매월 반복 관리</p><h1 className="text-[28px] font-extrabold">고정지출</h1></div></header>
     <div className="px-5">
       <div className="rounded-[24px] bg-gradient-to-br from-[#0284c7] to-[#38bdf8] p-5 text-white"><p className="text-xs text-white/70">현재 활성 고정지출</p><p className="mt-1 text-3xl font-extrabold">{formatWon(currentTotal)}</p></div>
       <div className="mt-4 flex h-12 items-center gap-2 rounded-2xl bg-white px-4 dark:bg-[#211f29]"><Search size={18}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="항목명, 카테고리, 메모, 결제수단 검색" className="w-full bg-transparent text-sm outline-none"/></div>
-      <div className="mt-3 flex gap-2">{['all', 'enabled', 'disabled'].map(value => <button key={value} onClick={() => setStatus(value)} className={`rounded-full px-4 py-2 text-sm font-bold ${status === value ? 'bg-[#0284c7] text-white' : 'bg-white text-gray-500'}`}>{value === 'all' ? '전체' : value === 'enabled' ? '활성' : '비활성'}</button>)}</div>
-      <div className="mt-3 grid grid-cols-2 gap-2"><select value={category} onChange={event => setCategory(event.target.value)} className="h-11 rounded-xl border-0 bg-white px-3 dark:bg-[#211f29]"><option>전체</option>{recurringCategories.map(value => <option key={value}>{value}</option>)}</select><select value={sort} onChange={event => setSort(event.target.value)} className="h-11 rounded-xl border-0 bg-white px-3 dark:bg-[#211f29]"><option value="day">결제일 순</option><option value="desc">높은 금액순</option><option value="asc">낮은 금액순</option></select></div>
+      <div data-swipe-ignore className="mt-3 flex gap-2">{['all', 'enabled', 'disabled'].map(value => <button key={value} onClick={() => setStatus(value)} className={`rounded-full px-4 py-2 text-sm font-bold ${status === value ? 'bg-[#0284c7] text-white' : 'bg-white text-gray-500'}`}>{value === 'all' ? '전체' : value === 'enabled' ? '활성' : '비활성'}</button>)}</div>
+      <div className="mt-3 grid grid-cols-2 gap-2"><select value={category} onChange={event => setCategory(event.target.value)} className="h-11 rounded-xl border-0 bg-white px-3 dark:bg-[#211f29]"><option>전체</option>{recurringCategories.map(value => <option key={value}>{value}</option>)}</select><select data-swipe-ignore value={sort} onChange={event => setSort(event.target.value as RecurringSort)} className="h-11 rounded-xl border-0 bg-white px-3 dark:bg-[#211f29]"><option value="day">결제일 빠른 순</option><option value="my-desc">내 부담액 높은 순</option><option value="my-asc">내 부담액 낮은 순</option><option value="total-desc">전체 금액 높은 순</option><option value="total-asc">전체 금액 낮은 순</option><option value="category">카테고리순</option><option value="recent">최근 등록 순</option></select></div>
       <div className="mt-5 space-y-3">{rows.map(expense => <button key={expense.id} onClick={() => { setSelected(expense); setModal('detail') }} className={`w-full rounded-[22px] border bg-white p-4 text-left dark:bg-[#211f29] ${expense.enabled ? 'border-gray-100' : 'border-dashed opacity-60'}`}>
         <div className="flex justify-between"><div><div className="flex flex-wrap items-center gap-2"><b>{expense.title}</b>{expense.splitPayment && <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold text-[#0284c7]">{expense.splitParticipants.length}명 나눠 내기</span>}<span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold text-[#0284c7]">{expense.enabled ? 'ON' : 'OFF'}</span></div><p className="mt-1 text-xs text-gray-400">{[expense.category, expense.paymentMethod].filter(Boolean).join(' · ')}</p></div><ChevronRight size={18}/></div>
         <div className="mt-4 flex justify-between"><div><p className="text-xs text-gray-400">{expense.splitPayment ? '각자 부담 금액' : '월 고정지출'}</p><p className="text-lg font-extrabold">{formatWon(expense.splitPayment ? splitShares(expense.amount, expense.splitParticipants)[0].amount : expense.amount)}</p>{expense.splitPayment && <p className="text-[11px] text-gray-400">전체 {formatWon(expense.amount)}</p>}</div><div className="text-right"><p className="text-xs font-bold text-[#0284c7]">매월 {expense.paymentDay}일</p><p className="mt-1 text-[10px] text-gray-400">{latestPeriod(expense) ? periodText(latestPeriod(expense)!) : '사용 기간 없음'}</p></div></div>
