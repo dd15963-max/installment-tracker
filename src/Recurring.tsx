@@ -67,7 +67,12 @@ function make(form: RecurringExpenseFormData, existing?: RecurringExpense): Recu
 }
 
 function Shell({ children, close }: { children: React.ReactNode; close: () => void }) {
-  return <div data-swipe-ignore className="fixed inset-0 z-50 bg-black/35 backdrop-blur-sm"><div className="absolute inset-x-0 bottom-0 mx-auto max-h-[94vh] max-w-[480px] overflow-y-auto rounded-t-[30px] bg-[#f8f7fb] dark:bg-[#15141b]"><button onClick={close} className="absolute right-5 top-5 z-10 grid h-10 w-10 place-items-center rounded-full bg-white dark:bg-[#292731]"><X size={19}/></button>{children}</div></div>
+  useEffect(() => {
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [])
+  return <div data-swipe-ignore className="fixed inset-0 z-50 overscroll-none bg-black/35 backdrop-blur-sm"><div role="dialog" aria-modal="true" className="absolute inset-x-0 bottom-0 mx-auto max-h-[94dvh] max-w-[480px] overscroll-contain overflow-y-auto scroll-pb-32 rounded-t-[30px] bg-[#f8f7fb] pb-[env(safe-area-inset-bottom)] dark:bg-[#15141b]"><button onClick={close} aria-label="닫기" className="absolute right-5 top-5 z-10 grid h-11 w-11 place-items-center rounded-full bg-white dark:bg-[#292731]"><X size={19}/></button>{children}</div></div>
 }
 
 function Field({ label, value, set, type = 'text', min, max }: { label: string; value: string; set: (value: string) => void; type?: string; min?: string; max?: string }) {
@@ -75,13 +80,15 @@ function Field({ label, value, set, type = 'text', min, max }: { label: string; 
 }
 
 function Editor({ form, setForm, selected, save, close, participantDefaults }: { form: RecurringExpenseFormData; setForm: (form: RecurringExpenseFormData) => void; selected: RecurringExpense | null; save: (event: React.FormEvent) => void; close: () => void; participantDefaults: string[] }) {
-  const set = (key: keyof RecurringExpenseFormData, value: string | boolean) => setForm({ ...form, [key]: value })
+const set = (key: keyof RecurringExpenseFormData, value: string | boolean) => setForm({ ...form, [key]: value })
+  const participantNames = form.splitParticipants.map(name => name.trim())
+  const duplicateNames = form.splitPayment && new Set(participantNames.filter(Boolean)).size !== participantNames.filter(Boolean).length
   return <Shell close={close}><form onSubmit={save} className="px-5 pb-8 pt-7">
     <p className="text-sm font-bold text-[#0284c7]">매월 반복 지출</p>
     <h2 className="mt-1 text-2xl font-extrabold">{selected ? '고정지출 수정' : '고정지출 등록'}</h2>
     <div className="mt-6 space-y-4">
       <Field label="항목명 *" value={form.title} set={value => set('title', value)}/>
-      <Field label="금액 *" value={form.amount} set={value => set('amount', value)} type="number" min="0"/>
+      <Field label="금액 *" value={form.amount} set={value => set('amount', value)} type="number" min="1"/>
       <Field label="매월 결제일 *" value={form.paymentDay} set={value => set('paymentDay', value)} type="number" min="1" max="31"/>
       {(!selected || selected.enabled) && <div><Field label="적용 시작월 *" value={form.startMonth} set={value => set('startMonth', value)} type="month"/><p className="mt-2 text-xs text-gray-400">선택한 월부터 월별 지출에 포함됩니다.</p></div>}
       <label className="block"><span className="mb-2 block text-sm font-bold">카테고리</span><select value={form.category} onChange={event => set('category', event.target.value)} className="h-12 w-full rounded-2xl border-0 bg-white px-4 dark:bg-[#211f29]">{recurringCategories.map(category => <option key={category}>{category}</option>)}</select></label>
@@ -92,8 +99,8 @@ function Editor({ form, setForm, selected, save, close, participantDefaults }: {
         {form.splitPayment && <div className="mt-4 border-t border-gray-100 pt-4 dark:border-white/5">
           <label className="mb-2 block text-sm font-bold">참여 인원</label>
           <select value={form.splitParticipants.length} onChange={event => { const count = Number(event.target.value); setForm({ ...form, splitParticipants: Array.from({ length: count }, (_, index) => form.splitParticipants[index] || participantDefaults[index] || `참여자 ${index + 1}`) }) }} className="h-11 w-full rounded-xl border-0 bg-[#f8f7fb] px-3 dark:bg-[#15141b]">{Array.from({ length: 7 }, (_, index) => index + 2).map(count => <option key={count} value={count}>{count}명</option>)}</select>
-          <div className="mt-3 grid grid-cols-2 gap-2">{form.splitParticipants.map((name, index) => <label key={index}><span className="mb-1 block text-[10px] font-bold text-gray-400">{index === 0 ? '내 이름' : `${index + 1}번 참여자`}</span><input value={name} onChange={event => { const names = [...form.splitParticipants]; names[index] = event.target.value; setForm({ ...form, splitParticipants: names }) }} className="h-10 w-full rounded-xl border-0 bg-[#f8f7fb] px-3 text-sm dark:bg-[#15141b]"/></label>)}</div>
-          <div className="mt-3 rounded-xl bg-sky-50 p-3 text-sm dark:bg-sky-500/10">{splitShares(Number(form.amount) || 0, form.splitParticipants).map((share, index) => <div key={index} className="flex justify-between py-1"><span>{share.name}</span><b>{formatWon(share.amount)}</b></div>)}</div>
+          <div className="mt-3 grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">{form.splitParticipants.map((name, index) => <label key={index}><span className="mb-1 block text-[10px] font-bold text-gray-400">{index === 0 ? '내 이름' : `${index + 1}번 참여자`}</span><input value={name} onChange={event => { const names = [...form.splitParticipants]; names[index] = event.target.value; setForm({ ...form, splitParticipants: names }) }} className="h-10 w-full rounded-xl border-0 bg-[#f8f7fb] px-3 text-sm dark:bg-[#15141b]"/></label>)}</div>
+          <div className="mt-3 rounded-xl bg-sky-50 p-3 text-sm dark:bg-sky-500/10">{splitShares(Number(form.amount) || 0, form.splitParticipants).map((share, index) => <div key={index} className="flex justify-between py-1"><span className="truncate">{share.name}</span><b>{formatWon(share.amount)}</b></div>)}<p className="mt-2 text-[11px] leading-4 text-gray-500">균등 분할 후 남는 1원 단위 금액은 첫 번째 참여자에게 반영됩니다.</p></div>{duplicateNames && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">참여자 이름은 서로 다르게 입력해 주세요.</p>}
         </div>}
       </div>
     </div>
@@ -128,18 +135,36 @@ export function RecurringView({ expenses, setExpenses, addSignal, participantDef
   const [periodMonth, setPeriodMonth] = useState(monthKey())
   const lastAddSignal = useRef(addSignal)
 
+  const openModal = (nextModal: 'edit' | 'detail' | 'period', hash: string) => {
+    window.history.pushState({ installmentTracker: true, tab: 'recurring', modal: 'recurring-' + nextModal }, '', hash)
+    setModal(nextModal)
+  }
+  const closeModal = () => {
+    if (String(window.history.state?.modal || '').startsWith('recurring-')) window.history.back()
+    else setModal(null)
+  }
   const add = () => {
     const next = blank()
     next.splitParticipants = participantDefaults.slice(0, 2)
     setSelected(null)
     setForm(next)
-    setModal('edit')
+    openModal('edit', '#recurring-add')
   }
   useEffect(() => {
     if (addSignal !== lastAddSignal.current) add()
     lastAddSignal.current = addSignal
   }, [addSignal])
-  useEffect(() => { localStorage.setItem(RECURRING_SORT_KEY, sort) }, [sort])
+useEffect(() => { localStorage.setItem(RECURRING_SORT_KEY, sort) }, [sort])
+  useEffect(() => {
+    const handleBack = (event: PopStateEvent) => {
+      const value = String(event.state?.modal || '')
+      if (event.state?.tab !== 'recurring' || !value.startsWith('recurring-')) { setModal(null); return }
+      const next = value.replace('recurring-', '')
+      if (next === 'edit' || next === 'detail' || next === 'period') setModal(next)
+    }
+    window.addEventListener('popstate', handleBack)
+    return () => window.removeEventListener('popstate', handleBack)
+  }, [])
 
   const rows = useMemo(() => expenses.filter(expense =>
     [expense.title, expense.category, expense.memo, expense.paymentMethod].join(' ').toLowerCase().includes(query.toLowerCase()) &&
@@ -157,9 +182,18 @@ export function RecurringView({ expenses, setExpenses, addSignal, participantDef
 
   const save = (event: React.FormEvent) => {
     event.preventDefault()
+    const amount = Number(form.amount)
+    const paymentDay = Number(form.paymentDay)
+    const names = form.splitParticipants.map(name => name.trim())
+    if (!form.title.trim()) { alert('항목명을 입력해 주세요.'); return }
+    if (!Number.isInteger(amount) || amount <= 0) { alert('금액은 1원 이상의 정수로 입력해 주세요.'); return }
+    if (!Number.isInteger(paymentDay) || paymentDay < 1 || paymentDay > 31) { alert('결제일은 1~31일 사이로 입력해 주세요.'); return }
+    if (form.splitPayment && (names.some(name => !name) || new Set(names).size !== names.length)) { alert('나눠 내기 참여자 이름을 빠짐없이 서로 다르게 입력해 주세요.'); return }
     const next = make(form, selected || undefined)
     setExpenses(previous => selected ? previous.map(expense => expense.id === selected.id ? next : expense) : [next, ...previous])
     setSelected(next)
+    if (selected) window.history.back()
+    else window.history.replaceState({ installmentTracker: true, tab: 'recurring', modal: 'recurring-detail' }, '', '#recurring-detail-' + next.id)
     setModal('detail')
   }
 
@@ -167,7 +201,7 @@ export function RecurringView({ expenses, setExpenses, addSignal, participantDef
     if (!selected) return
     setPeriodMode(selected.enabled ? 'disable' : 'enable')
     setPeriodMonth(monthKey())
-    setModal('period')
+    openModal('period', '#recurring-period')
   }
 
   const savePeriod = (event: React.FormEvent) => {
@@ -192,13 +226,14 @@ export function RecurringView({ expenses, setExpenses, addSignal, participantDef
     const next = { ...selected, enabled: periodMode === 'enable', activePeriods, updatedAt: new Date().toISOString() }
     setExpenses(previous => previous.map(expense => expense.id === next.id ? next : expense))
     setSelected(next)
+    window.history.back()
     setModal('detail')
   }
 
   const remove = () => {
     if (selected && confirm('이 고정지출을 삭제하시겠습니까?')) {
       setExpenses(previous => previous.filter(expense => expense.id !== selected.id))
-      setModal(null)
+      closeModal()
     }
   }
 
@@ -211,20 +246,20 @@ export function RecurringView({ expenses, setExpenses, addSignal, participantDef
       <div className="mt-4 flex h-12 items-center gap-2 rounded-2xl bg-white px-4 dark:bg-[#211f29]"><Search size={18}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="항목명, 카테고리, 메모, 결제수단 검색" className="w-full bg-transparent text-sm outline-none"/></div>
       <div data-swipe-ignore className="mt-3 flex gap-2">{['all', 'enabled', 'disabled'].map(value => <button key={value} onClick={() => setStatus(value)} className={`rounded-full px-4 py-2 text-sm font-bold ${status === value ? 'bg-[#0284c7] text-white' : 'bg-white text-gray-500'}`}>{value === 'all' ? '전체' : value === 'enabled' ? '활성' : '비활성'}</button>)}</div>
       <div className="mt-3 grid grid-cols-2 gap-2"><select value={category} onChange={event => setCategory(event.target.value)} className="h-11 rounded-xl border-0 bg-white px-3 dark:bg-[#211f29]"><option>전체</option>{recurringCategories.map(value => <option key={value}>{value}</option>)}</select><select data-swipe-ignore value={sort} onChange={event => setSort(event.target.value as RecurringSort)} className="h-11 rounded-xl border-0 bg-white px-3 dark:bg-[#211f29]"><option value="day">결제일 빠른 순</option><option value="my-desc">내 부담액 높은 순</option><option value="my-asc">내 부담액 낮은 순</option><option value="total-desc">전체 금액 높은 순</option><option value="total-asc">전체 금액 낮은 순</option><option value="category">카테고리순</option><option value="recent">최근 등록 순</option></select></div>
-      <div className="mt-5 space-y-3">{rows.map(expense => <button key={expense.id} onClick={() => { setSelected(expense); setModal('detail') }} className={`w-full rounded-[22px] border bg-white p-4 text-left dark:bg-[#211f29] ${expense.enabled ? 'border-gray-100' : 'border-dashed opacity-60'}`}>
+      <div className="mt-5 space-y-3">{rows.map(expense => <button key={expense.id} onClick={() => { setSelected(expense); openModal('detail', '#recurring-detail-' + expense.id) }} className={`w-full rounded-[22px] border bg-white p-4 text-left dark:bg-[#211f29] ${expense.enabled ? 'border-gray-100' : 'border-dashed opacity-60'}`}>
         <div className="flex justify-between"><div><div className="flex flex-wrap items-center gap-2"><b>{expense.title}</b>{expense.splitPayment && <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold text-[#0284c7]">{expense.splitParticipants.length}명 나눠 내기</span>}<span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold text-[#0284c7]">{expense.enabled ? 'ON' : 'OFF'}</span></div><p className="mt-1 text-xs text-gray-400">{[expense.category, expense.paymentMethod].filter(Boolean).join(' · ')}</p></div><ChevronRight size={18}/></div>
-        <div className="mt-4 flex justify-between"><div><p className="text-xs text-gray-400">{expense.splitPayment ? '각자 부담 금액' : '월 고정지출'}</p><p className="text-lg font-extrabold">{formatWon(expense.splitPayment ? splitShares(expense.amount, expense.splitParticipants)[0].amount : expense.amount)}</p>{expense.splitPayment && <p className="text-[11px] text-gray-400">전체 {formatWon(expense.amount)}</p>}</div><div className="text-right"><p className="text-xs font-bold text-[#0284c7]">매월 {expense.paymentDay}일</p><p className="mt-1 text-[10px] text-gray-400">{latestPeriod(expense) ? periodText(latestPeriod(expense)!) : '사용 기간 없음'}</p></div></div>
+        <div className="mt-4 flex justify-between"><div><p className="text-xs text-gray-400">{expense.splitPayment ? '내 부담 금액' : '월 고정지출 예상'}</p><p className="text-lg font-extrabold">{formatWon(expense.splitPayment ? splitShares(expense.amount, expense.splitParticipants)[0].amount : expense.amount)}</p>{expense.splitPayment && <p className="text-[11px] text-gray-400">전체 {formatWon(expense.amount)}</p>}</div><div className="text-right"><p className="text-xs font-bold text-[#0284c7]">매월 {expense.paymentDay}일</p><p className="mt-1 text-[10px] text-gray-400">{latestPeriod(expense) ? periodText(latestPeriod(expense)!) : '사용 기간 없음'}</p></div></div>
       </button>)}{!rows.length && <div className="py-14 text-center text-gray-400"><CreditCard className="mx-auto"/><p className="mt-3 text-sm font-bold">고정지출이 없어요.</p></div>}</div>
     </div>
-    {modal === 'edit' && <Editor form={form} setForm={setForm} selected={selected} save={save} close={() => setModal(null)} participantDefaults={participantDefaults}/>} 
-    {modal === 'period' && selected && <PeriodEditor expense={selected} mode={periodMode} value={periodMonth} setValue={setPeriodMonth} save={savePeriod} close={() => setModal('detail')}/>} 
-    {modal === 'detail' && selected && <Shell close={() => setModal(null)}><div className="px-5 pb-8 pt-7">
+    {modal === 'edit' && <Editor form={form} setForm={setForm} selected={selected} save={save} close={closeModal} participantDefaults={participantDefaults}/>}
+    {modal === 'period' && selected && <PeriodEditor expense={selected} mode={periodMode} value={periodMonth} setValue={setPeriodMonth} save={savePeriod} close={closeModal}/>}
+    {modal === 'detail' && selected && <Shell close={closeModal}><div className="px-5 pb-8 pt-7">
       <p className="text-sm font-bold text-[#0284c7]">{selected.enabled ? '사용 중 · 매월 반복' : '사용 안 함'}</p><h2 className="mt-1 text-2xl font-extrabold">{selected.title}</h2>
-      <div className="mt-5 rounded-[24px] bg-[#211f2d] p-5 text-white"><p className="text-xs text-white/60">월 고정지출</p><p className="mt-1 text-3xl font-extrabold">{formatWon(selected.amount)}</p><p className="mt-4 text-sm text-white/70">매월 {selected.paymentDay}일 · {selected.category}</p></div>
-      {selected.splitPayment && <div className="mt-3 rounded-2xl bg-white p-4 dark:bg-[#211f29]"><p className="mb-3 text-sm font-extrabold">월 분담액</p><div className="grid grid-cols-2 gap-2">{splitShares(selected.amount, selected.splitParticipants).map((share, index) => <div key={index} className={`rounded-xl p-3 ${index === 0 ? 'bg-sky-50 dark:bg-sky-500/10' : 'bg-[#f8f7fb] dark:bg-[#15141b]'}`}><p className="text-xs text-gray-400">{share.name}{index === 0 ? ' · 나' : ''}</p><b>{formatWon(share.amount)}</b></div>)}</div></div>}
+      <div className="mt-3 rounded-2xl bg-sky-50 p-3 text-xs leading-5 text-gray-600 dark:bg-sky-500/10 dark:text-gray-300">이 금액은 월 예산에 포함되는 예상 지출입니다. 실제 청구액은 다를 수 있습니다.</div><div className="mt-3 rounded-[24px] bg-[#211f2d] p-5 text-white"><p className="text-xs text-white/60">월 고정지출 예상액</p><p className="mt-1 text-3xl font-extrabold">{formatWon(selected.amount)}</p><p className="mt-4 text-sm text-white/70">매월 {selected.paymentDay}일 · {selected.category}</p></div>
+      {selected.splitPayment && <div className="mt-3 rounded-2xl bg-white p-4 dark:bg-[#211f29]"><p className="mb-3 text-sm font-extrabold">월 분담액</p><div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">{splitShares(selected.amount, selected.splitParticipants).map((share, index) => <div key={index} className={`rounded-xl p-3 ${index === 0 ? 'bg-sky-50 dark:bg-sky-500/10' : 'bg-[#f8f7fb] dark:bg-[#15141b]'}`}><p className="text-xs text-gray-400">{share.name}{index === 0 ? ' · 나' : ''}</p><b>{formatWon(share.amount)}</b></div>)}</div></div>}
       <div className="mt-3 rounded-2xl bg-white p-4 dark:bg-[#211f29]"><p className="text-sm font-extrabold">사용 기간</p><div className="mt-3 space-y-2">{selected.activePeriods.length ? selected.activePeriods.map((period, index) => <div key={`${period.startMonth}-${index}`} className="flex items-center justify-between rounded-xl bg-[#f8f7fb] px-3 py-2 text-xs dark:bg-[#15141b]"><span>{periodText(period)}</span><b className={period.endMonth ? 'text-gray-400' : 'text-[#0284c7]'}>{period.endMonth ? '종료' : 'ON'}</b></div>) : <p className="text-xs text-gray-400">기록된 사용 기간이 없어요.</p>}</div></div>
       {selected.memo && <div className="mt-4 rounded-2xl bg-white p-4 dark:bg-[#211f29]"><b className="text-xs text-gray-400">메모</b><p className="mt-2 text-sm">{selected.memo}</p></div>}
-      <div className="mt-5 flex gap-2"><button onClick={beginToggle} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-gray-200 font-bold dark:bg-white/10"><Power size={17}/>{selected.enabled ? '사용 중지' : '다시 사용'}</button><button onClick={() => { setForm(formOf(selected)); setModal('edit') }} className="grid h-12 w-12 place-items-center rounded-2xl bg-white dark:bg-[#211f29]"><Pencil size={18}/></button></div>
+      <div className="mt-5 flex gap-2"><button onClick={beginToggle} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-gray-200 font-bold dark:bg-white/10"><Power size={17}/>{selected.enabled ? '사용 중지' : '다시 사용'}</button><button onClick={() => { setForm(formOf(selected)); openModal('edit', '#recurring-edit-' + selected.id) }} aria-label="고정지출 수정" className="grid h-12 w-12 place-items-center rounded-2xl bg-white dark:bg-[#211f29]"><Pencil size={18}/></button></div>
       <button onClick={remove} className="mt-5 flex h-12 w-full items-center justify-center gap-2 text-sm font-bold text-red-500"><Trash2 size={17}/>삭제</button>
     </div></Shell>}
   </>

@@ -27,6 +27,7 @@ export interface InstallmentItem {
   createdAt: string
   updatedAt: string
   completedAt?: string
+  isSample?: boolean
   payments: InstallmentPayment[]
 }
 

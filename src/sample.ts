@@ -3,7 +3,7 @@ import { createPayments } from './utils'
 
 const make = (title: string, total: number, months: number, date: string, paid: number, paymentMethod: string, category: string): InstallmentItem => ({
   id: crypto.randomUUID(), title, totalAmount: total, installmentMonths: months, firstPaymentDate: date,
-  paymentMethod, merchant: '', category, memo: '', splitPayment: false, splitParticipants: [], paidCount: paid, status: paid === months ? 'completed' : 'active',
+  paymentMethod, merchant: '', category, memo: '', splitPayment: false, splitParticipants: [], paidCount: paid, status: paid === months ? 'completed' : 'active', isSample: true,
   createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), payments: createPayments(total, months, date, paid),
 })
 

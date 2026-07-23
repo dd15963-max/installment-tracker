@@ -6,7 +6,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select, textarea { font: inherit; }
-button { cursor: pointer; }
+button { cursor: pointer; touch-action: manipulation; }
 .safe-bottom { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
 .hide-scroll::-webkit-scrollbar { display: none; }
 .dark { color-scheme: dark; }
